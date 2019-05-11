@@ -1,0 +1,18 @@
+{
+  "name": "chatops",
+  "version": "0.0.0",
+  "private": true,
+  "author": "Jeremie",
+  "description": "",
+  "dependencies": {
+    "hubot": "^3.3.2",
+    "hubot-diagnostics": "^1.0.0",
+    "hubot-help": "^1.0.1",
+    "hubot-scripts": "^2.17.2",
+    "hubot-slack": "^4.7.1",
+    "localtunnel": "^1.9.1"
+  },
+  "engines": {
+    "node": "0.10.x"
+  }
+}
