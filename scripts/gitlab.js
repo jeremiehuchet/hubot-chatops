@@ -41,12 +41,6 @@ module.exports = robot => {
     docker: 'docker',
     deploy: 'rocket'
   }
-  const statusReaction = {
-    success: 'heavy_check_mark',
-    failed: 'boom',
-    canceled: 'no_entry_sign',
-    skipped: 'no_entry_sign'
-  }
 
   // returns the duration of the laste pipeline of the given project and reference (branch, tag, ...)
   function estimatePipelineDuration(projectId, ref) {
@@ -57,6 +51,24 @@ module.exports = robot => {
       .then(JSON.parse)
       .then(prevPipeline => Math.trunc(prevPipeline.duration / 60) + 1)
       .catch(err => robot.logger.info(`gitlab: unable to retrieve last pipeline execution time for project ${projectId}: ${err.stack}`))
+  }
+
+  // returns the name and url the environment the last pip
+  async function guessTargetEnvironment(projectId, ref) {
+    const deployments = await gitlab.get(`/projects/${projectId}/deployments?order_by=id&sort=desc`)
+      .then(JSON.parse)
+    const branchRefEnv = deployments.find(d => d.ref === ref)
+    const tagRefEnv = deployments.find(d => !!d.tag)
+    if (branchRefEnv) {
+      return branchRefEnv.environment
+    }
+    if (tagRefEnv) {
+      return tagRefEnv.environment
+    }
+    return {
+      name: 'unknown env',
+      url: 'http://unknown'
+    }
   }
 
   async function handlePipelineEvent(e, channel) {
@@ -70,8 +82,12 @@ module.exports = robot => {
         notifier: notifier
       })
       // notify channel with duration estimation
-      const duration = await estimatePipelineDuration(e.project.id, e.object_attributes.ref);
-      await notifier.message(`:rocket: déploiement de ${e.project.name} sur ${e.object_attributes.ref} d'ici ${duration} minutes`)
+      const duration = await estimatePipelineDuration(e.project.id, e.object_attributes.ref)
+      const environment = await guessTargetEnvironment(e.project.id, e.object_attributes.ref)
+      await notifier.message(
+        `:rocket: déploiement de ${e.project.name} sur ${environment.name} d'ici ${duration} minutes`,
+        e.commit.message
+        )
       // dispatch jobs events which should have been ignored if they came before the pipeline event
       e.builds.forEach(build => handleBuildEvent({
         commit: { id: e.object_attributes.id },
@@ -86,7 +102,17 @@ module.exports = robot => {
 
     // update message if pipeline is finished
     if (p.info.object_attributes.finished_at) {
-      await p.notifier.message(`:rocket: :${statusReaction[p.info.object_attributes.status]}: déploiement de ${p.info.project.name} sur ${p.info.object_attributes.ref} terminé`)
+      switch (p.info.object_attributes.status) {
+        case 'success':
+          p.notifier.color('good')
+          p.notifier.react('heavy_check_mark')
+          break
+        case 'failed':
+          p.notifier.color('danger')
+          break
+        default:
+          p.notifier.color('warning')
+      }
       pipelinesWatchList.delete(p.info.object_attributes.id)
     }
 
