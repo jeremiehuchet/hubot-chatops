@@ -23,43 +23,23 @@
 // sourced from https://github.com/rustedgrail/hubot-jira
 // rewritten to js
 
-const http = require('../lib/http')
+const { JiraApi } = require('../lib/jira')
 
 const jiraUrl = process.env.HUBOT_JIRA_URL
 const jiraUsername = process.env.HUBOT_JIRA_USERNAME
 const jiraPassword = process.env.HUBOT_JIRA_PASSWORD
-const jiraIgnoreCase = process.env.HUBOT_JIRA_IGNORECASE
 const jiraIgnoreUsers = process.env.HUBOT_JIRA_ISSUES_IGNORE_USERS || "jira|github|gitlab"
 
 module.exports = robot => {
 
   const cache = []
 
-  const jira = new http.Client(robot, jiraUrl)
-    .withBasicAuth(jiraUsername, jiraPassword)
+  const jira = new JiraApi(robot, jiraUrl, jiraUsername, jiraPassword)
 
   robot.error((err, msg) => {
     robot.logger.error(`jira-issues: ${err.stack}`)
     msg.send(`:boom: ${msg.message} can't be handled because ${err}`)
   })
-
-  async function getJiraProjects() {
-    return jira.get('/rest/api/2/project')
-      .then(JSON.parse)
-  }
-
-  // [{key: "KEY1"} {key: "KEY2"}] → '/\b(KEY1|KEY2)-?(\d+)\b/g'
-  function jiraProjectsToMessagePattern(json) {
-    const projectKeysPattern = json
-      .map(project => project.key)
-      .map(projectKey => `${projectKey}`)
-      .join('|')
-    const jiraPattern = `\\b(${projectKeysPattern})-?(\\d+)\\b`
-    if (!jiraIgnoreCase || jiraIgnoreCase == true) {
-      return new RegExp(jiraPattern, 'ig')
-    }
-    return new RegExp(jiraPattern, 'g')
-  }
 
   function cleanUpCache() {
     const now = new Date().getTime()
@@ -77,8 +57,7 @@ module.exports = robot => {
   }
 
   async function fetchIssue(issueId) {
-    const issue = await jira.get(`/rest/api/2/issue/${issueId}`)
-      .then(JSON.parse)
+    const issue = await jira.getIssue(issueId)
     cache.push({
       expires: new Date().getTime() + 120000,
       issue: issue
@@ -86,8 +65,8 @@ module.exports = robot => {
     return issue
   }
 
-  getJiraProjects()
-    .then(jiraProjectsToMessagePattern)
+  jira.getProjects()
+    .then(jira.getTicketDetectionPattern)
     .then(jiraPattern => {
       robot.logger.info(`Listening to jira tickets using pattern ${jiraPattern}`)
 
@@ -110,5 +89,8 @@ module.exports = robot => {
           }
         })
       })
+    })
+    .catch(e => {
+      robot.logger.error(`jira-issues: ${e.stack}`)
     })
 }
