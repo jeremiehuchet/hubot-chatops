@@ -65,8 +65,7 @@ module.exports = robot => {
     return issue
   }
 
-  jira.getProjects()
-    .then(jira.getTicketDetectionPattern)
+  jira.getTicketDetectionPattern()
     .then(jiraPattern => {
       robot.logger.info(`Listening to jira tickets using pattern ${jiraPattern}`)
 
@@ -75,7 +74,7 @@ module.exports = robot => {
           robot.logger.info(`jira-issues: Ignoring message from ${msg.message.user.name}`)
           return
         }
-        robot.logger.debug(`jira-issues: handling messages matches ${msg.match}`)
+        robot.logger.debug(`jira-issues: handling messages matches ${msg.match.join(', ')}`)
         msg.match.forEach(async issueId => {
           const issue = findCachedIssue(issueId) || await fetchIssue(issueId)
           if (issue.errorMessages) {
