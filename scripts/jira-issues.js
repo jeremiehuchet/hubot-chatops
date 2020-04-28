@@ -23,30 +23,27 @@
 // sourced from https://github.com/rustedgrail/hubot-jira
 // rewritten to js
 
+const improve = require('../lib/better-robot')
 const { JiraApi } = require('../lib/jira')
+const { SlackMessage } = require('../lib/slack')
 
 const jiraUrl = process.env.HUBOT_JIRA_URL
 const jiraUsername = process.env.HUBOT_JIRA_USERNAME
 const jiraPassword = process.env.HUBOT_JIRA_PASSWORD
 const jiraIgnoreUsers = process.env.HUBOT_JIRA_ISSUES_IGNORE_USERS || "jira|github|gitlab"
 
-module.exports = robot => {
+const capability = robot => {
 
   const cache = []
 
   const jira = new JiraApi(robot, jiraUrl, jiraUsername, jiraPassword)
-
-  robot.error((err, msg) => {
-    robot.logger.error(`jira-issues: ${err.stack}`)
-    msg.send(`:boom: ${msg.message} can't be handled because ${err}`)
-  })
 
   function cleanUpCache() {
     const now = new Date().getTime()
     while (cache.length > 0 && cache[0].expires <= now) {
       cache.shift()
     }
-    robot.logger.debug(`jira-issues: cache size: ${cache.length}`)
+    robot.logger.debug(`cache size: ${cache.length}`)
   }
 
   function findCachedIssue(issueId) {
@@ -71,14 +68,15 @@ module.exports = robot => {
 
       robot.hear(jiraPattern, msg => {
         if (!msg.message.user.name || msg.message.user.name.match(new RegExp(jiraIgnoreUsers, 'i'))) {
-          robot.logger.info(`jira-issues: Ignoring message from ${msg.message.user.name}`)
+          robot.logger.info(`Ignoring message from ${msg.message.user.name}`)
           return
         }
-        robot.logger.debug(`jira-issues: handling messages matches ${msg.match.join(', ')}`)
+        robot.logger.debug(`handling messages matches ${msg.match.join(', ')}`)
         msg.match.forEach(async issueId => {
           const issue = findCachedIssue(issueId) || await fetchIssue(issueId)
           if (issue.errorMessages) {
-            msg.send(`:boom: ${issueId} ${issue.errorMessages.join(', ')}`)
+            await new SlackMessage(robot, msg.message)
+              .threadReply(`:information_source: ${issueId} ${issue.errorMessages.join(', ')}`)
           } else {
             let ticketLink = `<${jiraUrl}/browse/${issueId}|${issueId}>`
             if (issue.fields.status.statusCategory.key == 'done') {
@@ -89,7 +87,6 @@ module.exports = robot => {
         })
       })
     })
-    .catch(e => {
-      robot.logger.error(`jira-issues: ${e.stack}`)
-    })
 }
+
+module.exports = improve('jira-issues')(capability)

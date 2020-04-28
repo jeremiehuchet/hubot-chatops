@@ -16,23 +16,17 @@
 //   none - notifies pipeline executions
 
 
+const improve = require('../lib/better-robot')
 const http = require('../lib/http')
-const slackapi = require('@slack/web-api')
 const { SlackStatusMessage } = require('../lib/slack')
 
-module.exports = robot => {
+const capability = robot => {
 
   const watchedProjects = (process.env.HUBOT_GITLAB_WATCH_PROJECTS_LIST || '').split(',')
   const watchedBranches = new RegExp(process.env.HUBOT_GITLAB_WATCH_BRANCHES_REGEXP, 'gi')
 
-  const slack = new slackapi.WebClient(process.env.HUBOT_SLACK_TOKEN)
   const gitlab = new http.Client(robot, process.env.HUBOT_GITLAB_HOST + '/api/v4')
     .withHeader('Private-Token', process.env.HUBOT_GITLAB_PRIVATE_TOKEN)
-
-  robot.error((err, msg) => {
-    robot.logger.error(`gitlab: ${err.stack}`)
-    msg.send(`:boom: that's an error... ${err}`)
-  })
 
   const pipelinesWatchList = new Map()
   const stageReactions = {
@@ -50,7 +44,7 @@ module.exports = robot => {
       .then(previousPipeline => gitlab.get(`/projects/${projectId}/pipelines/${previousPipeline.id}`))
       .then(JSON.parse)
       .then(prevPipeline => Math.trunc(prevPipeline.duration / 60) + 1)
-      .catch(err => robot.logger.info(`gitlab: unable to retrieve last pipeline execution time for project ${projectId}: ${err.stack}`))
+      .catch(err => robot.logger.info(`unable to retrieve last pipeline execution time for project ${projectId}: ${err.stack}`))
   }
 
   // returns the name and url the environment the last pip
@@ -72,11 +66,11 @@ module.exports = robot => {
   }
 
   async function handlePipelineEvent(e, channel) {
-    robot.logger.debug(`gitlab: handle event pipeline[id=${e.object_attributes.id}, status=${e.object_attributes.status}]`)
+    robot.logger.debug(`handle event pipeline[id=${e.object_attributes.id}, status=${e.object_attributes.status}]`)
 
     if (!pipelinesWatchList.has(e.object_attributes.id)) {
       // first event about this pipeline, initialize notifier
-      const notifier = new SlackStatusMessage(channel, slack, robot.logger)
+      const notifier = new SlackStatusMessage(channel, robot.logger)
       pipelinesWatchList.set(e.object_attributes.id, {
         info: e,
         notifier: notifier
@@ -124,16 +118,16 @@ module.exports = robot => {
         map.delete(id)
       }
     })
-    robot.logger.info(`gitlab: watch list size: ${pipelinesWatchList.size}`)
+    robot.logger.info(`watch list size: ${pipelinesWatchList.size}`)
   }
 
   function handleBuildEvent(e) {
     const p = pipelinesWatchList.get(e.commit.id)
     if (!p) {
-      robot.logger.debug(`gitlab: ignore event build[id=${e.build_id}] because event pipeline[id=${e.commit.id}] has not been received yet`)
+      robot.logger.debug(`ignore event build[id=${e.build_id}] because event pipeline[id=${e.commit.id}] has not been received yet`)
       return
     }
-    robot.logger.debug(`gitlab: handle event build[id=${e.build_id}, status=${e.build_status}]`)
+    robot.logger.debug(`handle event build[id=${e.build_id}, status=${e.build_status}]`)
     if (e.build_status != 'created' && stageReactions[e.build_stage]) {
       p.notifier.react(stageReactions[e.build_stage])
     }
@@ -142,11 +136,11 @@ module.exports = robot => {
   function shouldWatchEvent(e) {
     const watchProject = watchedProjects.includes(e.project.path_with_namespace)
     const watchRef = e.object_attributes.ref.match(watchedBranches)
-    robot.logger.info(`gitlab: project ${e.object_attributes.ref}, watchProject=${watchProject}, watchRef=${watchRef}`)
+    robot.logger.info(`project ${e.object_attributes.ref}, watchProject=${watchProject}, watchRef=${watchRef}`)
     if (watchProject && watchRef) {
       return true
     }
-    robot.logger.info(`gitlab: ignoring pipeline ${e.object_attributes.id} for branch ${e.object_attributes.ref}`)
+    robot.logger.info(`ignoring pipeline ${e.object_attributes.id} for branch ${e.object_attributes.ref}`)
     return false
   }
 
@@ -165,3 +159,5 @@ module.exports = robot => {
   })
 
 }
+
+module.exports = improve('gitlab-pipelines')(capability)
